@@ -14,5 +14,17 @@ just `make` will build the plugin too, and run the plugin loader to do a full te
 
 ## Developing Plugins
 import the `plugin_sdk` as a dependency.  
-Implement a function `pub fn test()` with the `#[no_mangle]`.  
+Implement a functions: `pub fn test()` with the `#[no_mangle]`.  
+```
+#[no_mangle]
+pub fn test() {
+    todo!();
+}
+
+#[no_mangle]
+pub fn read_write_test(storeage: &dyn Datastore) {
+    todo!();
+}
+```
 Without no_mangle to compiler will omit the function under build.  
+Variable name in the read_write_test function is irrelevant

@@ -7,18 +7,18 @@ fn main() {
     let data = Data { store: RwLock::new(HashMap::<String,String>::new()) };
     data.set_value("Test".to_string(), "Hello World!".to_string());
 
-    println!("{}", data.get_value("Test".to_string()).unwrap());
-
     if let Ok(mut res) = fs::read_dir("lib") {
         while let Some(Ok(item)) = res.next() {
             println!("Found plugin {}", item.file_name().to_str().unwrap());
 
             match unsafe { Container::<Plugin>::load(item.path().as_os_str()) } {
-                Ok(cont) => cont.test(),
+                Ok(cont) => cont.read_write_test(&data),
                 Err(e) => println!("Failed to load plugin {}", e)
             }
         }
     }
+
+    println!("{}", data.get_value("Answer".to_string()).unwrap());
 }
 
 struct Data {
@@ -46,4 +46,5 @@ impl Datastore for Data {
 #[derive(WrapperApi)]
 struct Plugin {
     test: fn(),
+    read_write_test: fn(storage: &dyn Datastore)
 }
