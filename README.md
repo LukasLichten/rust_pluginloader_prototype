@@ -6,8 +6,13 @@ cargo run
 ```
 will run the pluginloader  
   
-*TODO: Make plugin build instructions when done*
+To build the plugin and copy the *.so into lib run 
+```
+make plugin
+```
+just `make` will build the plugin too, and run the plugin loader to do a full test
 
 ## Developing Plugins
-import the `plugin_sdk` as a dependency  
-*TODO: Define a callback function to implement*
+import the `plugin_sdk` as a dependency.  
+Implement a function `pub fn test()` with the `#[no_mangle]`.  
+Without no_mangle to compiler will omit the function under build.  
