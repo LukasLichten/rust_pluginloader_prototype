@@ -1,4 +1,4 @@
-use plugin_sdk::Datastore;
+use plugin_sdk::{Datastore, InterPluginAPI, ApiFunc};
 
 /// As the Datastore reference has a static runtime we can store it like this <br>
 /// This allows other functions and callbacks that don't have the reference <br>
@@ -14,10 +14,15 @@ pub fn init(storage: &'static dyn Datastore) {
     unsafe { D = Some(storage); }
     //println!("From the test realm");
 
-    unsafe { match D {
-        Some(store) => store.set_value("Plugin1".to_string(), "Fuck you world".to_string()),
-        None => println!("Didn't work")
-    }}
+    storage.set_value("Plugin1".to_string(), "Fuck you world".to_string());
+
+    let api = InterPluginAPI { functions: vec![("test".to_string(),ApiFunc::Basic(test))] };
+    storage.set_interapi("plugin1", api);
+
+    // unsafe { match D {
+    //     Some(store) => store.set_value("Plugin1".to_string(), "Fuck you world".to_string()),
+    //     None => println!("Didn't work")
+    // }}
 }
 
 #[no_mangle]
@@ -32,4 +37,8 @@ pub fn update(storage: &'static dyn Datastore) {
     println!("So Plugin 2 updated after {}ns and {} iter: {}",start.elapsed().as_nanos(), index, storage.get_value("Finish".to_string()).unwrap());
 
     storage.set_value("Answer".to_string(), "My final message... good bye...".to_string());
+}
+
+fn test() {
+    println!("Around the world...");
 }

@@ -1,11 +1,11 @@
 use std::{sync::RwLock, collections::HashMap, fs, thread};
 
 use dlopen2::wrapper::{WrapperApi, Container};
-use plugin_sdk::Datastore;
+use plugin_sdk::{Datastore, InterPluginAPI};
 
 
 fn main() {
-    let data: &'static Data = Box::leak(Box::new(Data {store: RwLock::new(HashMap::<String,String>::new())}));
+    let data: &'static Data = Box::leak(Box::new(Data::new()));
     data.set_value("Test".to_string(), "Hello World!".to_string());
 
     let mut plugins = vec![];
@@ -32,7 +32,7 @@ fn main() {
 
     // Either way, we need to give the thread time to finish execution before we access Answer, else we race the thread and run into a None
     for handle in threads {
-        handle.join().expect("Something went wrong");
+        handle.join().expect("One of the plugins died...");
     }
     //thread::sleep(time::Duration::from_millis(10));
 
@@ -40,7 +40,8 @@ fn main() {
 }
 
 struct Data {
-    store: RwLock<HashMap<String, String>>
+    store: RwLock<HashMap<String, String>>,
+    apis: RwLock<HashMap<String, InterPluginAPI>>
 }
 
 impl Datastore for Data {
@@ -59,7 +60,30 @@ impl Datastore for Data {
 
         None
     }
+
+    fn set_interapi(&self, key: &str, api: plugin_sdk::InterPluginAPI) {
+        if let Ok(mut l) = self.apis.write() {
+            l.insert(key.to_string(), api);
+        }
+    }
+
+    fn get_interapi(&self, key: &str) -> Option<plugin_sdk::InterPluginAPI> {
+        if let Ok(r) = self.apis.read() {
+            if let Some(v) = r.get(&(key.to_string())) {
+                return Some(v.clone());
+            }
+        }
+
+        None
+    }
 }
+
+impl Data {
+    fn new() -> Data {
+        Data {store: RwLock::new(HashMap::<String,String>::new()), apis: RwLock::new(HashMap::<String,InterPluginAPI>::new())}
+    }
+}
+
 #[derive(WrapperApi)]
 struct Plugin {
     init: fn(storage: &'static dyn Datastore),

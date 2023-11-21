@@ -72,6 +72,7 @@ name = "second_plugin"
 version = "0.1.0"
 dependencies = [
  "plugin_sdk",
+ "test_sub_sdk",
 ]
 
 [[package]]
@@ -90,7 +91,12 @@ name = "test_plugin"
 version = "0.1.0"
 dependencies = [
  "plugin_sdk",
+ "test_sub_sdk",
 ]
+
+[[package]]
+name = "test_sub_sdk"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"

@@ -11,3 +11,4 @@ bench = false
 
 [dependencies]
 plugin_sdk = { path = "../plugin_sdk" }
+test_sub_sdk = { path = "../test_plugin/test_sub_sdk" }
