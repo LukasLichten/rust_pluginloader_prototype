@@ -14,7 +14,7 @@ just `make` will build the plugin too, and run the plugin loader to do a full te
 
 ## Developing Plugins
 import the `plugin_sdk` as a dependency.  
-Implement a functions: `pub fn test()` with the `#[no_mangle]`.  
+Implement the functions:  
 ```
 #[no_mangle]
 pub fn test() {
@@ -22,7 +22,7 @@ pub fn test() {
 }
 
 #[no_mangle]
-pub fn read_write_test(storeage: &dyn Datastore) {
+pub fn read_write_test(storeage: &'static dyn Datastore) {
     todo!();
 }
 ```

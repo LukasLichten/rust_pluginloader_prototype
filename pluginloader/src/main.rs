@@ -3,8 +3,9 @@ use std::{sync::RwLock, collections::HashMap, fs};
 use dlopen2::wrapper::{WrapperApi, Container};
 use plugin_sdk::Datastore;
 
+
 fn main() {
-    let data = Data { store: RwLock::new(HashMap::<String,String>::new()) };
+    let data: &'static Data = Box::leak(Box::new(Data {store: RwLock::new(HashMap::<String,String>::new())}));
     data.set_value("Test".to_string(), "Hello World!".to_string());
 
     if let Ok(mut res) = fs::read_dir("lib") {
@@ -12,7 +13,10 @@ fn main() {
             println!("Found plugin {}", item.file_name().to_str().unwrap());
 
             match unsafe { Container::<Plugin>::load(item.path().as_os_str()) } {
-                Ok(cont) => cont.read_write_test(&data),
+                Ok(cont) => {
+                    cont.read_write_test(data);
+                    cont.test();
+                },
                 Err(e) => println!("Failed to load plugin {}", e)
             }
         }
@@ -42,9 +46,8 @@ impl Datastore for Data {
         None
     }
 }
-
 #[derive(WrapperApi)]
 struct Plugin {
     test: fn(),
-    read_write_test: fn(storage: &dyn Datastore)
+    read_write_test: fn(storage: &'static dyn Datastore)
 }
