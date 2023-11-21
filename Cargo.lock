@@ -68,6 +68,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "second_plugin"
+version = "0.1.0"
+dependencies = [
+ "plugin_sdk",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"

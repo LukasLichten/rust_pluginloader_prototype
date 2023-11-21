@@ -14,17 +14,24 @@ just `make` will build the plugin too, and run the plugin loader to do a full te
 
 ## Developing Plugins
 import the `plugin_sdk` as a dependency.  
-Implement the functions:  
+Also set the library as a `dylib` in the `Cargo.toml`:
+```
+[lib]
+crate_type = ["dylib"]
+bench = false
+```
+  
+Then implement the functions:  
 ```
 #[no_mangle]
-pub fn test() {
+pub fn init(storeage: &'static dyn Datastore) {
     todo!();
 }
 
 #[no_mangle]
-pub fn read_write_test(storeage: &'static dyn Datastore) {
+pub fn update(storeage: &'static dyn Datastore) {
     todo!();
 }
 ```
 Without no_mangle to compiler will omit the function under build.  
-Variable name in the read_write_test function is irrelevant
+Variable name in the functions is irrelevant

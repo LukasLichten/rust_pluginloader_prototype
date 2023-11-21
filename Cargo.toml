@@ -1,4 +1,4 @@
 [workspace]
-members = ["pluginloader","plugin_sdk", "test_plugin"]
+members = ["pluginloader","plugin_sdk", "test_plugin", "second_plugin"]
 default-members = ["pluginloader"]
 resolver = "2"
