@@ -1,12 +1,12 @@
-use std::{sync::RwLock, collections::HashMap, fs, thread};
+use std::{sync::{RwLock, atomic::{AtomicI64, Ordering, AtomicU64, AtomicBool}, Mutex, Arc}, collections::HashMap, fs, thread};
 
 use dlopen2::wrapper::{WrapperApi, Container};
-use plugin_sdk::{Datastore, Plugin};
+use plugin_sdk::{Datastore, Plugin, Value};
 
 
 fn main() {
     let data: &'static Data = Box::leak(Box::new(Data::new()));
-    data.set_value("Test".to_string(), "Hello World!".to_string());
+    data.create_value("Test".to_string(), Value::Str("Hello World!".to_string())).unwrap();
 
     let plugins: &'static mut Vec<Container<PluginWrapper>> = Box::leak(Box::new(vec![]));
 
@@ -26,6 +26,7 @@ fn main() {
         }
     }
 
+
     let mut threads = vec![];
 
     for p in plugins.iter() {
@@ -41,7 +42,7 @@ fn main() {
     }
     thread::sleep(std::time::Duration::from_millis(10));
 
-    println!("{}", data.get_value(&"Answer".to_string()).unwrap());
+    println!("{}", data.get_value(&"Answer".to_string()).unwrap().to_string());
 
     // Cleaning out the plugins
     for p in plugins.iter() {
@@ -50,25 +51,67 @@ fn main() {
 }
 
 struct Data {
-    store: RwLock<HashMap<String, String>>,
-    plugins: RwLock<HashMap<String, InteralPlugin>>
+    key_map: RwLock<HashMap<String, usize>>,
+    plugins: RwLock<HashMap<String, InteralPlugin>>,
+    data_store: RwLock<Vec<DataContainer>>
 }
 
 impl Datastore for Data {
-    fn set_value(&self, key: String, val: String) {
-        if let Ok(mut l) = self.store.write() {
-            l.insert(key, val);
+    fn create_value(&self, key: String, val_type: Value) -> Result<(),()> {
+        if let (Ok(mut map),Ok(mut store)) = (self.key_map.write(), self.data_store.write()) {
+            if map.contains_key(&key) {
+                return Err(());
+            }
+
+            map.insert(key.clone(), store.len());
+            store.push(DataContainer { name: key, value: ValueStore::from(val_type) });
+
+
+            Ok(())
+        } else {
+            Err(())
         }
     }
 
-    fn get_value(&self, key: &String) -> Option<String> {
-        if let Ok(r) = self.store.read() {
-            if let Some(v) = r.get(key) {
-                return Some(v.clone());
-            }
-        }
+    fn set_value(&self, key: String, val: Value) -> Result<(),()> {
+        if let (Ok(map),Ok(store)) = (self.key_map.read(), self.data_store.read()) {
+            let index = if let Some(index) = map.get(&key) {
+                index.clone()
+            } else {
+                return Err(());
+            };
+            drop(map);
 
-        None
+            let cont = &store[index];
+            if &cont.name != &key {
+                return Err(());
+            }
+            return cont.value.update(val);
+        } else {
+            Err(())
+        }
+    }
+
+    fn get_value(&self, key: &String) -> Result<Value,()> {
+        if let (Ok(map),Ok(store)) = (self.key_map.read(), self.data_store.read()) {
+            let index = if let Some(index) = map.get(key) {
+                index.clone()
+            } else {
+                return Err(());
+            };
+            drop(map);
+
+            let cont = &store[index];
+            if &cont.name != key {
+                return Err(());
+            }
+            let val = cont.value.read();
+            drop(store);
+
+            Ok(val)
+        } else {
+            Err(())
+        }
     }
 
     fn register_plugin(&self, plugin: Plugin) -> Option<String> {
@@ -78,14 +121,14 @@ impl Datastore for Data {
         }
 
         let access_token = plugin.name.clone() + "your mum"; // TODO implement a secure token system
-        l.insert(plugin.name.clone(), InteralPlugin { plugin, access_token: access_token.clone() });
+        l.insert(plugin.name.clone(), InteralPlugin { plugin, access_token: access_token.clone(), switchoff_handle: Arc::new(AtomicBool::new(false)) });
         Some(access_token)
     }
 
     fn get_plugin(&self, name: &String) -> Option<Plugin> {
         let r = self.plugins.read().expect("Unable to read plugin list");
         if let Some(plugin) = r.get(name) {
-            return Some(plugin.plugin.clone());
+            return Some(plugin.plugin.renew(plugin.switchoff_handle.clone()));
         }
 
         None
@@ -102,7 +145,10 @@ impl Datastore for Data {
         }
 
         if let Some(index) = index {
-            return l.remove(&index).is_some();
+            if let Some(con) = l.remove(&index) {
+                // Interacting with the plugin is no longer possible
+                con.switchoff_handle.store(true, Ordering::Release); 
+            }
         }
 
         false
@@ -111,7 +157,7 @@ impl Datastore for Data {
 
 impl Data {
     fn new() -> Data {
-        Data {store: RwLock::new(HashMap::<String,String>::new()), plugins: RwLock::new(HashMap::<String,InteralPlugin>::new())}
+        Data {key_map: RwLock::new(HashMap::<String,usize>::new()), plugins: RwLock::new(HashMap::<String,InteralPlugin>::new()), data_store: RwLock::new(vec![])}
     }
 }
 
@@ -125,5 +171,60 @@ struct PluginWrapper {
 
 struct InteralPlugin {
     plugin: Plugin,
-    access_token: String
+    access_token: String,
+    switchoff_handle: Arc<AtomicBool>
+}
+
+struct DataContainer {
+    name: String,
+    value: ValueStore
+}
+
+pub enum ValueStore {
+    Int(AtomicI64),
+    Float(AtomicU64),
+    Bool(AtomicBool),
+    Str(Mutex<String>)
+}
+
+impl From<Value> for ValueStore {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Int(i) => ValueStore::Int(AtomicI64::new(i)),
+            Value::Float(f) => ValueStore::Float(AtomicU64::new(u64::from_be_bytes(f.to_be_bytes()))),
+            Value::Bool(b) => ValueStore::Bool(AtomicBool::new(b)),
+            Value::Str(str) => ValueStore::Str(Mutex::new(str)),
+        }
+    }
+}
+
+impl ValueStore {
+    pub fn update(&self, value: Value) -> Result<(), ()> {
+        match self {
+            ValueStore::Int(i) => i.store(value.try_into().ok().ok_or(())?, Ordering::Relaxed),
+            ValueStore::Float(f) => {
+                let float:f64 = value.try_into().ok().ok_or(())?;
+
+                let by = float.to_be_bytes();
+                let u = u64::from_be_bytes(by);
+                f.store(u, Ordering::Relaxed);
+            },
+            ValueStore::Bool(b) => b.store(value.try_into().ok().ok_or(())?, Ordering::Relaxed),
+            ValueStore::Str(str) => *str.lock().unwrap() = value.into(),
+        }
+
+        Ok(())
+    }
+
+    pub fn read(&self) -> Value {
+        match self {
+            ValueStore::Int(i) => Value::Int(i.load(Ordering::Relaxed)),
+            ValueStore::Float(f) => {
+                let u = f.load(Ordering::Relaxed);
+                Value::Float(f64::from_be_bytes(u.to_be_bytes()))
+            },
+            ValueStore::Bool(b) => Value::Bool(b.load(Ordering::Relaxed)),
+            ValueStore::Str(str) => Value::Str(str.lock().unwrap().clone()),
+        }
+    }
 }

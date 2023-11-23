@@ -1,6 +1,6 @@
 use std::{sync::{Mutex, OnceLock}, thread::{JoinHandle, self}};
 
-use plugin_sdk::{Datastore, Plugin};
+use plugin_sdk::{Datastore, Plugin, Value};
 
 static RUNNER: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
@@ -29,8 +29,7 @@ pub fn init(storage: &'static dyn Datastore) -> Result<(), String> {
     }
     
     
-
-    storage.set_value("Plugin1".to_string(), "Fuck you world".to_string());
+    storage.create_value("Plugin1".to_string(), Value::Str("Fuck you world".to_string())).unwrap();
     
 
     *RUNNER.lock().unwrap() = Some(thread::spawn(move | | { update(storage); }));
@@ -40,16 +39,16 @@ pub fn init(storage: &'static dyn Datastore) -> Result<(), String> {
 // Update function is optional, so we can run it in our own thread
 // #[no_mangle]
 fn update(storage: &'static dyn Datastore) {
-    println!("I read: {}",storage.get_value(&"Test".to_string()).unwrap());
+    println!("I read: {}",storage.get_value(&"Test".to_string()).unwrap().to_string());
 
     let mut index = 0;
     let start = std::time::Instant::now();
-    while let None = storage.get_value(&"Finish".to_string()) {
+    while let Err(()) = storage.get_value(&"Finish".to_string()) {
         index += 1;
     }
-    println!("So Plugin 2 updated after {}ns and {} iter: {}",start.elapsed().as_nanos(), index, storage.get_value(&"Finish".to_string()).unwrap());
+    println!("So Plugin 2 updated after {}ns and {} iter: {}",start.elapsed().as_nanos(), index, storage.get_value(&"Finish".to_string()).unwrap().to_string());
 
-    storage.set_value("Answer".to_string(), "My final message... good bye...".to_string());
+    storage.create_value("Answer".to_string(), Value::Str("My final message... good bye...".to_string())).unwrap();
 }
 
 pub fn run(_methode: String, _args: String) -> Result<String, ()> {
