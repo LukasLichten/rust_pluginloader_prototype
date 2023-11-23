@@ -28,10 +28,19 @@ pub fn init(storeage: &'static dyn Datastore) {
     todo!();
 }
 
+//Optional
 #[no_mangle]
 pub fn update(storeage: &'static dyn Datastore) {
     todo!();
 }
+
+#[no_mangle]
+pub fn end(storeage: &dyn Datastore) {
+    todo!();
+}
 ```
 Without no_mangle to compiler will omit the function under build.  
-Variable name in the functions is irrelevant
+Variable name in the functions is irrelevant  
+  
+You should also call `storage.register_plugin(plugin)` in your init, this gives you a token (that will be used in the future to set values).  
+Also `storage.register_plugin(access_token)` at the end  
