@@ -1,3 +1,6 @@
+//! Serves to store ideas that didn't work out
+
+
 /// The Manager is a failed attempt to reduce the overhead from dyn<br>
 /// dyn turns a reference into the reference to the data and a vtable with the functions<br>
 /// It was intended to be put into the plugin as a static mut, where the loader replaces it before calling any functions.<br>

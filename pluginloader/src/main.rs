@@ -1,12 +1,13 @@
-use std::{sync::{RwLock, atomic::{AtomicI64, Ordering, AtomicU64, AtomicBool}, Mutex, Arc}, collections::HashMap, fs, thread};
+use std::{sync::{RwLock, atomic::{AtomicI64, Ordering, AtomicU64, AtomicBool}, Mutex, Arc}, collections::{HashMap, hash_map::DefaultHasher}, fs, thread, hash::Hasher};
+use std::hash::Hash;
 
 use dlopen2::wrapper::{WrapperApi, Container};
-use plugin_sdk::{Datastore, Plugin, Value};
+use plugin_sdk::{Datastore, Plugin, Value, AccessToken, DataHandle};
 
 
 fn main() {
     let data: &'static Data = Box::leak(Box::new(Data::new()));
-    data.create_value("Test".to_string(), Value::Str("Hello World!".to_string())).unwrap();
+    // data.create_value("Test".to_string(), Value::Str("Hello World!".to_string())).unwrap();
 
     let plugins: &'static mut Vec<Container<PluginWrapper>> = Box::leak(Box::new(vec![]));
 
@@ -42,7 +43,7 @@ fn main() {
     }
     thread::sleep(std::time::Duration::from_millis(10));
 
-    println!("{}", data.get_value(&"Answer".to_string()).unwrap().to_string());
+    println!("{}", data.get_value(&data.get_data_handle("Answer").unwrap()).unwrap().to_string());
 
     // Cleaning out the plugins
     for p in plugins.iter() {
@@ -57,70 +58,78 @@ struct Data {
 }
 
 impl Datastore for Data {
-    fn create_value(&self, key: String, val_type: Value) -> Result<(),()> {
+    fn create_value(&self, key: String, access_token: &AccessToken, val_type: Value) -> Result<DataHandle,()> {
         if let (Ok(mut map),Ok(mut store)) = (self.key_map.write(), self.data_store.write()) {
+            // We should prepend the namespace for this specific plugin...
+            // or not, too complicated for this prototype
             if map.contains_key(&key) {
                 return Err(());
             }
 
-            map.insert(key.clone(), store.len());
-            store.push(DataContainer { name: key, value: ValueStore::from(val_type) });
+            let mut hasher = DefaultHasher::new();
+            key.hash(&mut hasher);
 
 
-            Ok(())
+            let handle = DataHandle { index: store.len(), name_hash: hasher.finish() };
+
+            map.insert(key.clone(), handle.index.clone());
+            store.push(DataContainer { name: key, value: ValueStore::from(val_type), owner: access_token.clone(), name_hash: handle.name_hash.clone() });
+
+
+            Ok(handle)
         } else {
             Err(())
         }
     }
 
-    fn set_value(&self, key: String, val: Value) -> Result<(),()> {
-        if let (Ok(map),Ok(store)) = (self.key_map.read(), self.data_store.read()) {
-            let index = if let Some(index) = map.get(&key) {
-                index.clone()
+    fn set_value(&self, handle: &DataHandle, access_token: &AccessToken, val: Value) -> Result<(),()> {
+        if let Ok(store) = self.data_store.read() {
+            if let Some(cont) = store.get(handle.index) {
+                if cont.name_hash != handle.name_hash {
+                    return Err(()); // Name was updated, so the handle is outdated
+                }
+                
+                if &cont.owner != access_token {
+                    return Err(());
+                    // This is not the owner, therefore does not have write permission
+                }
+
+                if cont.value.update(val).is_ok() {
+                    return Ok(());
+                } else {
+                    return Err(());
+                }
             } else {
                 return Err(());
-            };
-            drop(map);
-
-            let cont = &store[index];
-            if &cont.name != &key {
-                return Err(());
             }
-            return cont.value.update(val);
         } else {
             Err(())
         }
     }
 
-    fn get_value(&self, key: &String) -> Result<Value,()> {
-        if let (Ok(map),Ok(store)) = (self.key_map.read(), self.data_store.read()) {
-            let index = if let Some(index) = map.get(key) {
-                index.clone()
+    fn get_value(&self, handle: &DataHandle) -> Result<Value,()> {
+        if let Ok(store) = self.data_store.read() {
+            if let Some(cont) = store.get(handle.index) {
+                if cont.name_hash != handle.name_hash {
+                    return Err(()); // Name was updated, so the handle is outdated
+                }
+
+                return Ok(cont.value.read());
             } else {
                 return Err(());
-            };
-            drop(map);
-
-            let cont = &store[index];
-            if &cont.name != key {
-                return Err(());
             }
-            let val = cont.value.read();
-            drop(store);
-
-            Ok(val)
         } else {
             Err(())
         }
     }
 
-    fn register_plugin(&self, plugin: Plugin) -> Option<String> {
+    fn register_plugin(&self, plugin: Plugin) -> Option<AccessToken> {
         let mut l = self.plugins.write().expect("Unable to write to plugin list");
         if l.contains_key(&plugin.name) {
             return None;
         }
 
-        let access_token = plugin.name.clone() + "your mum"; // TODO implement a secure token system
+        let access_token = AccessToken::new(plugin.name.clone() + "your mum"); // TODO implement a secure token system
         l.insert(plugin.name.clone(), InteralPlugin { plugin, access_token: access_token.clone(), switchoff_handle: Arc::new(AtomicBool::new(false)) });
         Some(access_token)
     }
@@ -134,7 +143,7 @@ impl Datastore for Data {
         None
     }
 
-    fn deregister_plugin(&self, access_token: &String) -> bool {
+    fn deregister_plugin(&self, access_token: &AccessToken) -> bool {
         let mut l = self.plugins.write().expect("Unable to write to plugin list");
         let mut index: Option<String> = None;
 
@@ -151,7 +160,26 @@ impl Datastore for Data {
             }
         }
 
-        false
+        drop(l);
+
+        // We should also unload the propertys the plugins created
+        
+
+        true
+    }
+
+    fn get_data_handle(&self, key: &str) -> Option<DataHandle> {
+        if let (Ok(map),Ok(store)) = (self.key_map.read(),self.data_store.read()) {
+            if let Some(addr) = map.get(key) {
+                if let Some(item) = store.get(addr.clone()) {
+
+                    return Some(DataHandle { index: addr.clone(), name_hash: item.name_hash });
+                }
+            }
+
+        }
+
+        None
     }
 }
 
@@ -171,12 +199,15 @@ struct PluginWrapper {
 
 struct InteralPlugin {
     plugin: Plugin,
-    access_token: String,
+    access_token: AccessToken,
     switchoff_handle: Arc<AtomicBool>
 }
 
+#[allow(dead_code)]
 struct DataContainer {
     name: String,
+    owner: AccessToken,
+    name_hash: u64,
     value: ValueStore
 }
 
